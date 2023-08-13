@@ -10,12 +10,13 @@ from signal import SIGKILL
 
 
 ## MQTT Settings
-DEVICE_ID = os.environ.get('DEVICE_ID', 'rpi4_debug')
-LEDS_NUM = os.environ.get('LEDS_NUM')
-MQTT_HOST = os.environ.get('MQTT_HOST')
-MQTT_PORT = os.environ.get('MQTT_PORT')
-MQTT_USERNAME = os.environ.get('MQTT_USERNAME')
-MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD')
+DEVICE_ID = os.environ.get("DEVICE_ID", "rpi4_debug")
+LEDS_NUM = os.environ.get("LEDS_NUM")
+MQTT_HOST = os.environ.get("MQTT_HOST")
+MQTT_PORT = os.environ.get("MQTT_PORT")
+MQTT_USERNAME = os.environ.get("MQTT_USERNAME")
+MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD")
+MQTT_CA_CERT_PATH = os.environ.get("MQTT_CA_CERT_PATH", "ca.crt")
 
 client = mqtt.Client()
 
@@ -162,7 +163,7 @@ client.on_connect = on_connect
 client.on_message = on_message
 
 
-client.tls_set(ca_certs="ca.crt")
+client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
 client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
 print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
 client.connect(MQTT_HOST, int(MQTT_PORT), 15) 
