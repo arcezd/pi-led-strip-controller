@@ -6,7 +6,7 @@ import board
 import colorsys
 import neopixel
 import paho.mqtt.client as mqtt
-from signal import SIGKILL
+from signal import SIGKILL, SIGTERM, signal
 
 
 ## MQTT Settings
@@ -40,6 +40,18 @@ pixels = neopixel.NeoPixel(
 
 children = []
 strip_color = (0, 0, 0)
+
+# terminate all child processes
+# and turn off the led strip in case of
+# SIGTERM or SIGINT
+def terminate_process(signal_number, frame):
+    for child in children:
+        os.kill(child, SIGKILL)
+    rainbow_effect_stat(False)
+    strip_color_stat(False)
+    pixels.fill((0, 0, 0))
+    pixels.show()
+    sys.exit(0)
 
 # standard hsv to rgb conversion
 def hsv2rgb(h,s,v):
@@ -90,6 +102,11 @@ def rainbow_effect_stat(on = True):
         status = b'OFF'
     client.publish(f"stat/{DEVICE_ID}/effects/rainbow", status)
 
+def strip_color_stat(on = True):
+    status = b'ON'
+    if (on != True):
+        status = b'OFF'
+    client.publish(f"stat/{DEVICE_ID}/POWER", status)
 
 # The callback function. It will be triggered when trying to connect to the MQTT broker
 # client is the client instance connected this time
@@ -113,7 +130,7 @@ def on_message(client, userdata, msg):
     if msg.topic == f"cmnd/{DEVICE_ID}/effects/rainbow/set":
         switch = msg.payload.decode('UTF-8')
         print(f"Setting effect: {switch}")
-        client.publish(f"stat/{DEVICE_ID}/POWER", b'OFF')
+        strip_color_stat(False)
         if switch == "OFF":
             #Put Off
             rainbow_effect_stat(False)
@@ -149,20 +166,23 @@ def on_message(client, userdata, msg):
             pixels.fill(strip_color)
             pixels.show()
         else:
+            strip_color_stat(False)
             pixels.fill((0, 0, 0))
             pixels.show()
     else:
         print(f"Unknown topic: {msg.topic}")
 
+if __name__ == "__main__":
+    signal(SIGTERM, terminate_process)
 
-client.on_connect = on_connect
-client.on_message = on_message
+    client.on_connect = on_connect
+    client.on_message = on_message
 
-# Set TLS ca certificate
-if MQTT_CA_CERT_PATH is not None:
-    client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
+    # Set TLS ca certificate
+    if MQTT_CA_CERT_PATH is not None:
+        client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
 
-client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
-print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
-client.connect(MQTT_HOST, int(MQTT_PORT), 15) 
-client.loop_forever()
+    client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
+    print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
+    client.connect(MQTT_HOST, int(MQTT_PORT), 15) 
+    client.loop_forever()
