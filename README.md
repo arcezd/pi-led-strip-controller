@@ -38,4 +38,54 @@ sudo --preserve-env=MQTT_HOST \
   python3 mqtt-control.py > led-rainbown.log &
 ```
 
+## Homebridge setup
+
+Add the following configuration to the homebridge config.json file, replacing the DEVICE_ID, MQTT_HOST, MQTT_PORT, MQTT_USERNAME and MQTT_CA_CERT_PATH values as required.
+```json
+{
+  "type": "lightbulb",
+  "name": "DeskLED",
+  "url": "mqtts://mqtt-server:8884",
+  "username": "homebridge",
+  "password": "super_secret_password",
+  "mqttOptions": {
+      "cafile": "/homebridge/certs/mqtt-ca.crt"
+  },
+  "logMqtt": true,
+  "topics": {
+      "getOnline": "stat/[DEVICE_ID]/STATUS",
+      "setOn": "cmnd/[DEVICE_ID]/POWER",
+      "getOn": "stat/[DEVICE_ID]/POWER",
+      "getHSV": "stat/[DEVICE_ID]/HSBColor",
+      "setHSV": "cmnd/[DEVICE_ID]/HSBColor"
+  },
+  "onlineValue": "Online",
+  "offlineValue": "Offline",
+  "onValue": "ON",
+  "offValue": "OFF",
+  "accessory": "mqttthing"
+},
+{
+  "type": "lightbulb",
+  "name": "DeskLED Rainbow",
+  "url": "mqtts://mqtt-server:8884",
+  "username": "homebridge",
+  "password": "super_secret_password",
+  "mqttOptions": {
+      "cafile": "/homebridge/certs/mqtt-ca.crt"
+  },
+  "logMqtt": true,
+  "topics": {
+      "getOnline": "stat/[DEVICE_ID]/STATUS",
+      "setOn": "cmnd/[DEVICE_ID]/effects/rainbow/set",
+      "getOn": "stat/[DEVICE_ID]/effects/rainbow"
+  },
+  "onlineValue": "Online",
+  "offlineValue": "Offline",
+  "onValue": "ON",
+  "offValue": "OFF",
+  "accessory": "mqttthing"
+}
+```
+
 ## 
