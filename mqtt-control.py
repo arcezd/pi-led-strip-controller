@@ -12,6 +12,7 @@ from signal import SIGKILL
 ## MQTT Settings
 DEVICE_ID = os.environ.get("DEVICE_ID", "rpi4_debug")
 LEDS_NUM = os.environ.get("LEDS_NUM")
+PIXELS_ORDER = os.environ.get("PIXELS_ORDER", "RGB")
 MQTT_HOST = os.environ.get("MQTT_HOST")
 MQTT_PORT = os.environ.get("MQTT_PORT")
 MQTT_USERNAME = os.environ.get("MQTT_USERNAME")
@@ -33,13 +34,8 @@ except Exception:
     print(f"Error setting led strip number of leds: {LEDS_NUM}")
     sys.exit()
 
-
-# The order of the pixel colors - RGB or GRB. Some NeoPixels have red and green reversed!
-# For RGBW NeoPixels, simply change the ORDER to RGBW or GRBW.
-ORDER = neopixel.RGB
-
 pixels = neopixel.NeoPixel(
-    pixel_pin, num_pixels, brightness=0.5, auto_write=False, pixel_order=ORDER
+    pixel_pin, num_pixels, brightness=0.5, auto_write=False, pixel_order=PIXELS_ORDER
 )
 
 children = []
@@ -69,7 +65,7 @@ def wheel(pos):
         r = 0
         g = int(pos * 3)
         b = int(255 - pos * 3)
-    return (r, g, b) if ORDER in (neopixel.RGB, neopixel.GRB) else (r, g, b, 0)
+    return (r, g, b) if PIXELS_ORDER in ("RGB", "GRB", "BRG") else (r, g, b, 0)
 
 # Define rainbow cycle function to generate
 # rainbow effect on LED strip
@@ -162,8 +158,10 @@ def on_message(client, userdata, msg):
 client.on_connect = on_connect
 client.on_message = on_message
 
+# Set TLS ca certificate
+if MQTT_CA_CERT_PATH is not None:
+    client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
 
-client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
 client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
 print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
 client.connect(MQTT_HOST, int(MQTT_PORT), 15) 
