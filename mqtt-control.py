@@ -49,6 +49,7 @@ def terminate_process(signal_number, frame):
         os.kill(child, SIGKILL)
     rainbow_effect_stat(False)
     strip_color_stat(False)
+    set_strip_availability(False)
     pixels.fill((0, 0, 0))
     pixels.show()
     sys.exit(0)
@@ -107,6 +108,12 @@ def strip_color_stat(on = True):
     if (on != True):
         status = b'OFF'
     client.publish(f"stat/{DEVICE_ID}/POWER", status)
+
+def set_strip_availability(on = True):
+    status = b'Online'
+    if (on != True):
+        status = b'Offline'
+    client.publish(f"stat/{DEVICE_ID}/STATUS", status)
 
 # The callback function. It will be triggered when trying to connect to the MQTT broker
 # client is the client instance connected this time
@@ -184,5 +191,6 @@ if __name__ == "__main__":
 
     client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
     print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
-    client.connect(MQTT_HOST, int(MQTT_PORT), 15) 
+    client.connect(MQTT_HOST, int(MQTT_PORT), 15)
+    set_strip_availability()
     client.loop_forever()
