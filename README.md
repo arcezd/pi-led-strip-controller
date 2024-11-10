@@ -12,7 +12,9 @@ Project DYI for a NeoPixel led strip controlled by a Raspverry Pi and integrated
 | MQTT_HOST | MQTT server hostname |
 | MQTT_PORT | MQTT server port |
 | MQTT_USERNAME | MQTT server username |
-| MQTT_CA_CERT_PATH | MQTT TLS CA certificate path |
+| MQTT_CA_CERT_PATH | MQTT TLS CA certificate path | 
+| MAX_RETRIES | Max retries to connect to MQTT server | 10 |
+| BACKOFF_FACTOR | Backoff factor to be used for retries to connect to mqtt | 2 |
 
 ## Getting started
 Install the python dependencies using the command:
