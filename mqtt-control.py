@@ -6,7 +6,23 @@ import board
 import colorsys
 import neopixel
 import paho.mqtt.client as mqtt
+import logging
+from logging.handlers import SysLogHandler
 from signal import SIGKILL, SIGTERM, signal
+
+def setup_logger(logger):
+    logger.setLevel(logging.INFO)
+
+    # SysLogHandler for journald
+    syslog_handler = SysLogHandler(address='/dev/log')  # Unix socket for Syslog
+    formatter = logging.Formatter('%(name)s: %(levelname)s %(message)s')
+    syslog_handler.setFormatter(formatter)
+    logger.addHandler(syslog_handler)
+
+
+# configure logging to send messages to Syslog
+logger = logging.getLogger("led-strip")
+setup_logger(logger)
 
 
 ## MQTT Settings
@@ -19,7 +35,8 @@ MQTT_USERNAME = os.environ.get("MQTT_USERNAME")
 MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD")
 MQTT_CA_CERT_PATH = os.environ.get("MQTT_CA_CERT_PATH", "ca.crt")
 
-client = mqtt.Client()
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "10"))
+BACKOFF_FACTOR = int(os.environ.get("BACKOFF_FACTOR", "2"))
 
 ## LED Settings
 # Choose an open pin connected to the Data In of the NeoPixel strip, i.e. board.D18
@@ -31,7 +48,7 @@ num_pixels = 0
 try:
     num_pixels = int(LEDS_NUM)
 except Exception:
-    print(f"Error setting led strip number of leds: {LEDS_NUM}")
+    logger.error(f"Error setting led strip number of leds: {LEDS_NUM}")
     sys.exit()
 
 pixels = neopixel.NeoPixel(
@@ -44,12 +61,12 @@ strip_color = (0, 0, 0)
 # terminate all child processes
 # and turn off the led strip in case of
 # SIGTERM or SIGINT
-def terminate_process(signal_number, frame):
+def terminate_process(signum, frame, mqtt_client):
     for child in children:
         os.kill(child, SIGKILL)
     rainbow_effect_stat(False)
     strip_color_stat(False)
-    set_strip_availability(False)
+    set_strip_availability(mqtt_client, False)
     pixels.fill((0, 0, 0))
     pixels.show()
     sys.exit(0)
@@ -109,7 +126,7 @@ def strip_color_stat(on = True):
         status = b'OFF'
     client.publish(f"stat/{DEVICE_ID}/POWER", status)
 
-def set_strip_availability(on = True):
+def set_strip_availability(client, on = True):
     status = b'Online'
     if (on != True):
         status = b'Offline'
@@ -123,20 +140,20 @@ def set_strip_availability(on = True):
 # Generally, we only need to pay attention to whether the response code is 0.
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print("Connected success")
+        logger.info("Connected successfully!")
         client.subscribe(f"cmnd/{DEVICE_ID}/POWER")
         client.subscribe(f"cmnd/{DEVICE_ID}/HSBColor")
         client.subscribe(f"cmnd/{DEVICE_ID}/effects/rainbow/set")
     else:
-        print(f"Connected fail with code {rc}")
+        logger.error(f"Connected fail with code {rc}")
 
 
 def on_message(client, userdata, msg):
     global strip_color
-    print(f"{msg.topic} {msg.payload}")
+    logger.info(f"{msg.topic} {msg.payload}")
     if msg.topic == f"cmnd/{DEVICE_ID}/effects/rainbow/set":
         switch = msg.payload.decode('UTF-8')
-        print(f"Setting effect: {switch}")
+        logger.debug(f"Setting effect: {switch}")
         strip_color_stat(False)
         if switch == "OFF":
             #Put Off
@@ -150,26 +167,34 @@ def on_message(client, userdata, msg):
                 while True:
                     rainbow_cycle(0.010)
         else:
-            print(f"Unknown switch: {switch}")
+            logger.error(f"Unknown switch: {switch}")
     elif msg.topic == f"cmnd/{DEVICE_ID}/HSBColor":
         color = msg.payload.decode('UTF-8')
         rgb_color = (0, 0, 0)
-        print(f"Setting HSBColor: {color}")
+        logger.debug(f"Setting HSBColor: {color}")
         try:
             hsv = color.split(",")
             rgb_color = hsv2rgb(int(hsv[0])/360, int(hsv[1])/100, int(hsv[2])/100)
-            print(rgb_color)
+            logger.debug(rgb_color)
             strip_color = rgb_color
             rainbow_effect_stat(False)
+            if (strip_color == (0, 0, 0)):
+                strip_color_stat(False)
+            else:
+                strip_color_stat(True)
             pixels.fill(strip_color)
             pixels.show()
         except Exception:
-            print(f"Unable to convert HSBColor to RGB")
+            logger.error(f"Unable to convert HSBColor to RGB")
     elif msg.topic == f"cmnd/{DEVICE_ID}/POWER":
         power = msg.payload.decode('UTF-8')
-        print(f"Setting strip power: {power}")
+        logger.debug(f"Setting strip power: {power}")
         if power == "ON":
             rainbow_effect_stat(False)
+            if (strip_color == (0, 0, 0)):
+                strip_color_stat(False)
+            else:
+                strip_color_stat(True)
             pixels.fill(strip_color)
             pixels.show()
         else:
@@ -177,20 +202,48 @@ def on_message(client, userdata, msg):
             pixels.fill((0, 0, 0))
             pixels.show()
     else:
-        print(f"Unknown topic: {msg.topic}")
+        logger.error(f"Unknown topic: {msg.topic}")
 
-if __name__ == "__main__":
-    signal(SIGTERM, terminate_process)
 
+def connect_with_retries(client, host, port, keepalive, max_retries=MAX_RETRIES):
+    attempt = 0
+    delay = 1  # start with a 1-second delay
+
+    client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
 
     # Set TLS ca certificate
     if MQTT_CA_CERT_PATH is not None:
         client.tls_set(ca_certs=MQTT_CA_CERT_PATH)
-
     client.username_pw_set(username=MQTT_USERNAME, password=MQTT_PASSWORD)
-    print(f"Connecting to {MQTT_HOST}:{MQTT_PORT}...")
-    client.connect(MQTT_HOST, int(MQTT_PORT), 15)
-    set_strip_availability()
+
+    while attempt < max_retries:
+        try:
+            logger.info(f"Attempting to connect to {host}:{port} (Attempt {attempt + 1}/{max_retries})...")
+            client.connect(MQTT_HOST, int(MQTT_PORT), 15)
+
+            return client
+        except Exception as e:
+            logger.error(f"Connection failed with error: {e}. Retrying in {delay} seconds...")
+            attempt += 1  # increate attempt count
+            delay *= BACKOFF_FACTOR  # increase delay for the next attempt
+            time.sleep(delay)
+
+    logger.error("Max retries reached. Could not connect to MQTT broker.")
+    raise ConnectionError("Failed to connect to MQTT broker after multiple retries.")
+
+
+if __name__ == "__main__":
+    client = None
+    try:
+        client = connect_with_retries(client, MQTT_HOST, int(MQTT_PORT), keepalive=15)
+    except ConnectionError:
+        logger.error("Error connection to MQTT server")
+        exit(1)  # exit if connection could not be established
+
+    # define signal handling
+    signal(SIGTERM, lambda s, f: terminate_process(s, f, client))
+
+    set_strip_availability(client)
     client.loop_forever()
